@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	certmanagermetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/imdario/mergo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -200,46 +202,6 @@ func (r *ServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// // Service LB
 	// ////////////////
 
-	// serviceLB := &corev1.Service{
-	// 	ObjectMeta: metav1.ObjectMeta{
-	// 		Name:      fmt.Sprintf("%s-lb", instance.Name),
-	// 		Namespace: instance.Namespace,
-	// 	},
-	// }
-
-	// if op, err := controllerutil.CreateOrPatch(ctx, r.Client, serviceLB, func() error {
-	// 	if err := controllerutil.SetControllerReference(instance, serviceLB, r.Scheme); err != nil {
-	// 		return err
-	// 	}
-
-	// 	serviceLB.Spec.Type = corev1.ServiceTypeLoadBalancer
-	// 	ports := []corev1.ServicePort{
-	// 		{
-	// 			Name:       "server",
-	// 			Protocol:   corev1.ProtocolTCP,
-	// 			Port:       443,
-	// 			TargetPort: intstr.FromString("server"),
-	// 		},
-	// 	}
-
-	// 	if err := mergo.Merge(&serviceLB.Spec.Ports, ports); err != nil {
-	// 		return err
-	// 	}
-
-	// 	serviceLB.Spec.Selector = labels
-
-	// 	return nil
-	// }); err != nil {
-	// 	log.Error(err, "Service LB reconcile failed")
-	// } else {
-	// 	switch op {
-	// 	case controllerutil.OperationResultCreated:
-	// 		r.recorder.Event(instance, "Normal", "Created", fmt.Sprintf("Created Sevice %s", service.Name))
-	// 	case controllerutil.OperationResultUpdated:
-	// 		r.recorder.Event(instance, "Normal", "Updated", fmt.Sprintf("Updated Sevice %s", service.Name))
-	// 	}
-	// }
-
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
@@ -247,37 +209,33 @@ func (r *ServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		},
 	}
 
-	// certificate := &certmanagerv1.Certificate{
-	// 	ObjectMeta: metav1.ObjectMeta{
-	// 		Name:      instance.Name,
-	// 		Namespace: instance.Namespace,
-	// 	},
-	// }
+	certificate := &certmanagerv1.Certificate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name,
+			Namespace: instance.Namespace,
+		},
+	}
 
-	// if op, err := controllerutil.CreateOrUpdate(ctx, r.Client, certificate, func() error {
-	// 	if err := controllerutil.SetControllerReference(instance, certificate, r.Scheme); err != nil {
-	// 		return err
-	// 	}
+	if op, err := controllerutil.CreateOrUpdate(ctx, r.Client, certificate, func() error {
+		if err := controllerutil.SetControllerReference(instance, certificate, r.Scheme); err != nil {
+			return err
+		}
 
-	// 	certificate.Spec.SecretName = fmt.Sprintf("%s-tls", certificate.Name)
-	// 	certificate.Spec.IssuerRef = certmanagerv1metav1.ObjectReference{
-	// 		Name: instance.Spec.Issuer,
-	// 	}
-	// 	certificate.Spec.DNSNames = []string{"test.com"}
+		certificate.Spec.SecretName = instance.Spec.Host
+		certificate.Spec.IssuerRef = certmanagermetav1.ObjectReference{
+			Name: "cert-issuer",
+			Kind: "ClusterIssuer",
+		}
+		certificate.Spec.DNSNames = []string{instance.Spec.Host}
 
-	// 	ips := service.Spec.ClusterIPs
-	// 	ips = append(ips, serviceLB.Spec.ClusterIPs...)
-	// 	ips = append(ips, serviceLB.Spec.ExternalIPs...)
-	// 	certificate.Spec.IPAddresses = ips
-
-	// 	return nil
-	// }); err != nil {
-	// 	log.Error(err, "certificate reconcile failed")
-	// } else {
-	// 	if op != controllerutil.OperationResultNone {
-	// 		log.Info("certificate successfully reconciled", "operation", op)
-	// 	}
-	// }
+		return nil
+	}); err != nil {
+		log.Error(err, "certificate reconcile failed")
+	} else {
+		if op != controllerutil.OperationResultNone {
+			log.Info("certificate successfully reconciled", "operation", op)
+		}
+	}
 
 	// const keypath = "/run/headscale/certs"
 
@@ -560,13 +518,11 @@ func (r *ServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
 			Namespace: instance.Namespace,
+			Annotations: map[string]string{
+				"kubernetes.io/ingress.global-static-ip-name": "boulder-vpn-static-ingress-ip",
+			},
 		},
 	}
-
-	// ingress.SetName(instance.Name)
-	// ingress.SetNamespace(instance.Namespace)
-	// ingress.ObjectMeta.Name = instance.Name
-	// ingress.ObjectMeta.Namespace = instance.Namespace
 
 	if op, err := controllerutil.CreateOrUpdate(ctx, r.Client, ingress, func() error {
 		if err := controllerutil.SetControllerReference(instance, ingress, r.Scheme); err != nil {
@@ -590,8 +546,7 @@ func (r *ServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					HTTP: &networkingv1.HTTPIngressRuleValue{
 						Paths: []networkingv1.HTTPIngressPath{
 							{
-								Path: "/",
-								// PathType: (*networkingv1.PathType)(pointer.String(string(networkingv1.PathTypePrefix))),
+								Path:     "/",
 								PathType: &prefixPathType,
 								Backend: networkingv1.IngressBackend{
 									Service: &networkingv1.IngressServiceBackend{
@@ -617,7 +572,7 @@ func (r *ServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				Hosts: []string{
 					instance.Spec.Host,
 				},
-				SecretName: fmt.Sprintf("%s-certificats", instance.GetName()),
+				SecretName: instance.Spec.Host,
 			},
 		}
 
