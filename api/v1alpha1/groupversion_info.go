@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package v1alpha1 contains API Schema definitions for the headscale v1alpha1 API group
-//+kubebuilder:object:generate=true
-//+groupName=headscale.barpilot.io
+// +kubebuilder:object:generate=true
+// +groupName=headscale.barpilot.io
 package v1alpha1
 
 import (

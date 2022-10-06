@@ -121,7 +121,7 @@ var _ = Describe("Controllers/ServerController", func() {
 					return size, errors.New("host unmatch")
 				}
 
-				if *ingress.Spec.IngressClassName != "ingress-class" {
+				if *ingress.Spec.IngressClassName != "traefik" {
 					return size, errors.New("missing ingress class")
 				}
 				return size, nil

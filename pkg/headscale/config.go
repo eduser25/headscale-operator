@@ -1,4 +1,4 @@
-//+kubebuilder:object:generate=true
+// +kubebuilder:object:generate=true
 package headscale
 
 import (
